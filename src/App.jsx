@@ -7,6 +7,7 @@ import styles from "./App.module.css";
 function App() {
   const [messages, setMessages] = useState([]);
   const [assistantInstance, setAssistantInstance] = useState(null);
+  const [isLoading, setIsLoading] = useState(false);
   const isInitialized = useRef(false);
 
   // Initialize the assistant once
@@ -27,25 +28,50 @@ function App() {
     setMessages((prevMessages) => [...prevMessages, message]);
   }
 
+  function updateLastMessage(content) {
+    setMessages((prevMessages) => {
+      const newMessages = [...prevMessages];
+      const lastMessage = newMessages[newMessages.length - 1];
+      newMessages[newMessages.length - 1] = {
+        ...lastMessage,
+        content,
+      };
+      return newMessages;
+    });
+  }
+
   async function handleContentSend(content) {
     addMessage({ content, role: "user" });
+    setIsLoading(true);
 
     if (!assistantInstance) {
       addMessage({
         content: "Assistant is initializing. Please try again in a moment.",
         role: "system",
       });
+      setIsLoading(false);
       return;
     }
 
     try {
-      const result = await assistantInstance.sendMessage(content);
-      addMessage({ content: result.response.text(), role: "assistant" });
+      // Add an empty assistant message that we'll update as streaming comes in
+      addMessage({ content: "", role: "assistant" });
+      
+      // Use streaming
+      const result = await assistantInstance.sendMessageStream(content);
+      
+      let accumulatedText = "";
+      
+      for await (const chunk of result.stream) {
+        accumulatedText += chunk.text();
+        updateLastMessage(accumulatedText);
+      }
+      
     } catch (error) {
-      addMessage({
-        content: "Sorry, I couldn't process your request. Please try again!",
-        role: "system",
-      });
+      console.error("Streaming error:", error);
+      updateLastMessage("Sorry, I couldn't process your request. Please try again!");
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -53,12 +79,12 @@ function App() {
     <div className={styles.App}>
       <header className={styles.Header}>
         <img className={styles.Logo} src="/chat-bot.png" alt="Chat bot logo" />
-        <h2 className={styles.Title}>AI Chatbot</h2>
+        <h2 className={styles.Title}>Adaobi's AI Chatbot</h2>
       </header>
       <div className={styles.ChatContainer}>
         <Chat messages={messages} />
       </div>
-      <Controls onSend={handleContentSend} />
+      <Controls onSend={handleContentSend} isLoading={isLoading} />
     </div>
   );
 }
